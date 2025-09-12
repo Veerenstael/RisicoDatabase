@@ -1,5 +1,5 @@
 // Vervang dit met de URL van je Render backend
-const API_URL = 'https://jouw-app.render.com/api/risks';  // Render URL van de backend
+const API_URL = 'https://risicodatabase.onrender.com';  // Render URL van de backend
 
 document.getElementById('risk-form').addEventListener('submit', async (e) => {
   e.preventDefault();
