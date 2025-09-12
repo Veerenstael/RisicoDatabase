@@ -1,10 +1,12 @@
-// main.js
+// Vervang dit met de URL van je Render backend
+const API_URL = 'https://jouw-app.render.com/api/risks';  // Render URL van de backend
+
 document.getElementById('risk-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const riskDescription = document.getElementById('risk-description').value;
   
   // Verstuur het nieuwe risico naar de server
-  const response = await fetch('/api/risks', {
+  const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -19,7 +21,7 @@ document.getElementById('risk-form').addEventListener('submit', async (e) => {
 });
 
 async function displayRisks() {
-  const response = await fetch('/api/risks');
+  const response = await fetch(API_URL);  // Haal risico's op van de Render API
   const risks = await response.json();
 
   const riskList = document.getElementById('risk-list');
