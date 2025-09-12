@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Risicodatabase Tool</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Favicon -->
+  <link rel="icon" href="favicon.png" type="image/png">
+</head>
+<body>
+  <div class="dashboard-bg">
+    <header class="logo-header">
+      <img src="https://www.veerenstael.nl/wp-content/uploads/2020/06/logo-veerenstael-wit.png" alt="Veerenstael Logo" class="veerenstael-logo" />
+      <div class="subtitle-title">Risicodatabase Tool</div>
+    </header>
+
+    <div class="main-card">
+      <div class="header center-header">
+        <p>Voeg risico's toe aan de database en beheer ze effectief volgens IPMA-standaarden.</p>
+      </div>
+
+      <div class="content-grid">
+        <!-- Risico Invoer -->
+        <section class="input-pane">
+          <form id="risk-form">
+            <label for="risk-description">Beschrijving van het risico</label>
+            <input type="text" id="risk-description" placeholder="Beschrijving van het risico" required>
+
+            <div class="button-row">
+              <button type="submit" class="green">Voeg Risico toe</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Risico Lijst -->
+        <section class="output-pane">
+          <h2>Risico's in de Database</h2>
+          <div id="risk-list"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
