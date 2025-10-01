@@ -18,8 +18,7 @@ mongoose.connect(process.env.MONGODB_URI, {
 const riskSchema = new mongoose.Schema({
   riskId: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   },
   titel: {
     type: String,
