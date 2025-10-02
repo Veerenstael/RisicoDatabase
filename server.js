@@ -68,9 +68,17 @@ const riskSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['open', 'in uitvoering', 'geblokkeerd', 'gesloten'],
-    default: 'open',
+    enum: ['nieuw', 'in behandeling', 'gesloten'],
+    default: 'nieuw',
     required: true
+  },
+  aangemaakt: {
+    type: Date,
+    default: Date.now
+  },
+  laatstBewerkt: {
+    type: Date,
+    default: Date.now
   },
   createdAt: {
     type: Date,
@@ -93,6 +101,7 @@ riskSchema.pre('save', async function(next) {
     }
   }
   this.updatedAt = Date.now();
+  this.laatstBewerkt = Date.now();
   next();
 });
 
@@ -131,7 +140,9 @@ app.post('/api/risks', async (req, res) => {
     actiehouder: req.body.actiehouder,
     acties: req.body.acties,
     deadline: req.body.deadline,
-    status: req.body.status || 'open'
+    status: req.body.status || 'nieuw',
+    aangemaakt: req.body.aangemaakt || Date.now(),
+    laatstBewerkt: req.body.laatstBewerkt || Date.now()
   });
 
   try {
@@ -191,16 +202,12 @@ app.get('/api/dashboard/stats', async (req, res) => {
     const strategieCounts = await Risk.aggregate([
       { $group: { _id: '$responsstrategie', count: { $sum: 1 } } }
     ]);
-    const avgPrioriteit = await Risk.aggregate([
-      { $group: { _id: null, avg: { $avg: '$prioriteit' } } }
-    ]);
 
     res.json({
       total: totalRisks,
       byStatus: statusCounts,
       byCategorie: categorieCounts,
-      byStrategie: strategieCounts,
-      avgPrioriteit: avgPrioriteit[0]?.avg || 0
+      byStrategie: strategieCounts
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
