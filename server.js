@@ -58,6 +58,10 @@ const riskSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  projectcode: {
+    type: String,
+    required: false
+  },
   acties: {
     type: String,
     required: true
@@ -138,6 +142,7 @@ app.post('/api/risks', async (req, res) => {
     prioriteit: req.body.kans * req.body.impact,
     responsstrategie: req.body.responsstrategie,
     actiehouder: req.body.actiehouder,
+    projectcode: req.body.projectcode,
     acties: req.body.acties,
     deadline: req.body.deadline,
     status: req.body.status || 'nieuw',
