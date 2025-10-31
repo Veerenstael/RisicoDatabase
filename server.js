@@ -1,225 +1,137 @@
+// server.js
+// Veerenstael Risk Management – simpele API met Basic Auth (1 gedeeld account)
+
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
 
+// ---------- App setup ----------
 const app = express();
-
-app.use(cors());
+app.use(cors()); // pas evt. aan met { origin: ['https://jouwdomein'], credentials:false }
 app.use(express.json());
 
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('MongoDB verbonden'))
-.catch((err) => console.error('MongoDB connectie fout:', err));
+// ---------- Basic Auth (1 gedeelde login) ----------
+const ENABLE_BASIC_AUTH = String(process.env.ENABLE_BASIC_AUTH || 'true').toLowerCase() === 'true';
+const BASIC_USER = process.env.BASIC_USER || 'veerenstael';
+const BASIC_PASS = process.env.BASIC_PASS || 'SterkGedeeldWachtwoordHier';
 
-const riskSchema = new mongoose.Schema({
-  riskId: {
-    type: String,
-    unique: true
-  },
-  titel: {
-    type: String,
-    required: true
-  },
-  omschrijving: {
-    type: String,
-    required: true
-  },
-  categorie: {
-    type: String,
-    enum: ['extern', 'intern'],
-    required: true
-  },
-  kans: {
-    type: Number,
-    min: 1,
-    max: 5,
-    required: true
-  },
-  impact: {
-    type: Number,
-    min: 1,
-    max: 5,
-    required: true
-  },
-  prioriteit: {
-    type: Number,
-    required: true
-  },
-  responsstrategie: {
-    type: String,
-    enum: ['vermijden', 'reduceren', 'overdragen', 'accepteren', 'benutten'],
-    required: true
-  },
-  actiehouder: {
-    type: String,
-    required: true
-  },
-  projectcode: {
-    type: String,
-    required: false
-  },
-  acties: {
-    type: String,
-    required: true
-  },
-  deadline: {
-    type: Date,
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['nieuw', 'in behandeling', 'gesloten'],
-    default: 'nieuw',
-    required: true
-  },
-  aangemaakt: {
-    type: Date,
-    default: Date.now
-  },
-  laatstBewerkt: {
-    type: Date,
-    default: Date.now
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+// middleware vóór alle routes
+if (ENABLE_BASIC_AUTH) {
+  app.use((req, res, next) => {
+    const header = req.headers['authorization'] || '';
+    const [scheme, token] = header.split(' ');
+    if (scheme !== 'Basic' || !token) {
+      res.set('WWW-Authenticate', 'Basic realm="Veerenstael interne tool"');
+      return res.status(401).send('Authenticatie vereist');
+    }
+    const [u, p] = Buffer.from(token, 'base64').toString().split(':');
+    if (u === BASIC_USER && p === BASIC_PASS) return next();
+    return res.status(401).send('Onjuist');
+  });
+}
 
-riskSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    const lastRisk = await this.constructor.findOne({}, {}, { sort: { 'createdAt': -1 } });
-    if (lastRisk && lastRisk.riskId) {
-      const lastId = parseInt(lastRisk.riskId.replace('RISK-', ''));
-      this.riskId = `RISK-${String(lastId + 1).padStart(4, '0')}`;
+// ---------- Database ----------
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/risks';
+mongoose
+  .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB verbonden'))
+  .catch((err) => console.error('MongoDB connectie fout:', err));
+
+// Flexibel schema: accepteert velden uit de frontend (zonder strikte validatie)
+const riskSchema = new mongoose.Schema(
+  {
+    riskId: { type: String, unique: true, index: true },
+    titel: String,
+    beschrijving: String,
+    status: { type: String, default: 'Nieuw' }, // Nieuw | Open | Gesloten e.d.
+    categorie: String,
+    strategie: String, // bv. TAO/SAO/… als je dat gebruikt
+    eigenaar: String,
+    kans: Number,      // 1..5
+    impact: Number,    // 1..5
+    kleur: String,     // optioneel voor heatmap
+    deadline: Date,
+    opmerkingen: String,
+    // vrij veld voor alles wat je app meestuurt:
+    extra: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' }, strict: false }
+);
+
+// Automatische oplopende riskId (RISK-0001, 0002, …)
+riskSchema.pre('save', async function (next) {
+  if (this.isNew && !this.riskId) {
+    const last = await this.constructor.findOne({}).sort({ createdAt: -1 }).select('riskId').lean();
+    if (last && last.riskId && /^RISK-\d{4,}$/.test(last.riskId)) {
+      const n = parseInt(last.riskId.replace('RISK-', ''), 10) + 1;
+      this.riskId = `RISK-${String(n).padStart(4, '0')}`;
     } else {
       this.riskId = 'RISK-0001';
     }
   }
-  this.updatedAt = Date.now();
-  this.laatstBewerkt = Date.now();
   next();
 });
 
 const Risk = mongoose.model('Risk', riskSchema);
 
-app.get('/api/risks', async (req, res) => {
+// ---------- Routes ----------
+const router = express.Router();
+
+// Lijst
+router.get('/risks', async (req, res) => {
+  const items = await Risk.find({}).sort({ createdAt: -1 }).lean();
+  res.json(items);
+});
+
+// Aanmaken
+router.post('/risks', async (req, res) => {
   try {
-    const risks = await Risk.find().sort({ createdAt: -1 });
-    res.json(risks);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const doc = await Risk.create(req.body);
+    res.status(201).json(doc);
+  } catch (e) {
+    res.status(400).json({ message: e.message });
   }
 });
 
-app.get('/api/risks/:id', async (req, res) => {
+// Updaten
+router.put('/risks/:id', async (req, res) => {
   try {
-    const risk = await Risk.findById(req.params.id);
-    if (!risk) {
-      return res.status(404).json({ message: 'Risico niet gevonden' });
-    }
-    res.json(risk);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const doc = await Risk.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!doc) return res.status(404).json({ message: 'Niet gevonden' });
+    res.json(doc);
+  } catch (e) {
+    res.status(400).json({ message: e.message });
   }
 });
 
-app.post('/api/risks', async (req, res) => {
-  const risk = new Risk({
-    titel: req.body.titel,
-    omschrijving: req.body.omschrijving,
-    categorie: req.body.categorie,
-    kans: req.body.kans,
-    impact: req.body.impact,
-    prioriteit: req.body.kans * req.body.impact,
-    responsstrategie: req.body.responsstrategie,
-    actiehouder: req.body.actiehouder,
-    projectcode: req.body.projectcode,
-    acties: req.body.acties,
-    deadline: req.body.deadline,
-    status: req.body.status || 'nieuw',
-    aangemaakt: req.body.aangemaakt || Date.now(),
-    laatstBewerkt: req.body.laatstBewerkt || Date.now()
+// Verwijderen
+router.delete('/risks/:id', async (req, res) => {
+  try {
+    const r = await Risk.findByIdAndDelete(req.params.id);
+    if (!r) return res.status(404).json({ message: 'Niet gevonden' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: e.message });
+  }
+});
+
+// Eenvoudige stats voor tegels/filters/heatmap
+router.get('/stats', async (req, res) => {
+  const total = await Risk.countDocuments();
+  const byStatus = await Risk.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]);
+  const byCategorie = await Risk.aggregate([{ $group: { _id: '$categorie', count: { $sum: 1 } } }]);
+  const byStrategie = await Risk.aggregate([{ $group: { _id: '$strategie', count: { $sum: 1 } } }]);
+  res.json({
+    total,
+    byStatus,
+    byCategorie,
+    byStrategie,
   });
-
-  try {
-    const newRisk = await risk.save();
-    res.status(201).json(newRisk);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
 });
 
-app.put('/api/risks/:id', async (req, res) => {
-  try {
-    const risk = await Risk.findById(req.params.id);
-    if (!risk) {
-      return res.status(404).json({ message: 'Risico niet gevonden' });
-    }
+app.use('/api', router);
 
-    Object.keys(req.body).forEach(key => {
-      if (key !== 'riskId' && key !== '_id') {
-        risk[key] = req.body[key];
-      }
-    });
-
-    if (req.body.kans && req.body.impact) {
-      risk.prioriteit = req.body.kans * req.body.impact;
-    }
-
-    const updatedRisk = await risk.save();
-    res.json(updatedRisk);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-app.delete('/api/risks/:id', async (req, res) => {
-  try {
-    const risk = await Risk.findById(req.params.id);
-    if (!risk) {
-      return res.status(404).json({ message: 'Risico niet gevonden' });
-    }
-    await risk.deleteOne();
-    res.json({ message: 'Risico verwijderd' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.get('/api/dashboard/stats', async (req, res) => {
-  try {
-    const totalRisks = await Risk.countDocuments();
-    const statusCounts = await Risk.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 } } }
-    ]);
-    const categorieCounts = await Risk.aggregate([
-      { $group: { _id: '$categorie', count: { $sum: 1 } } }
-    ]);
-    const strategieCounts = await Risk.aggregate([
-      { $group: { _id: '$responsstrategie', count: { $sum: 1 } } }
-    ]);
-
-    res.json({
-      total: totalRisks,
-      byStatus: statusCounts,
-      byCategorie: categorieCounts,
-      byStrategie: strategieCounts
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
+// ---------- Start ----------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server draait op poort ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server draait op poort ${PORT}`));
